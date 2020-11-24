@@ -21,7 +21,7 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 #
-
+from PyQt5.QtCore import QThread
 import jetson.inference
 import jetson.utils
 import RPi.GPIO as GPIO
@@ -33,25 +33,27 @@ class_0_pin = 12  # BCM pin 18, BOARD pin 12
 class_1_pin = 16  
 class_2_pin = 18  
 
-class Classification:
-	def __init__(self,model_dir):
-		self.net = jetson.inference.imageNet(argv=['classification.py', '--model='+model_dir+'/resnet18.onnx', '--labels='+model_dir+'/labels.txt', '--input_blob=input_0', '--output_blob=output_0'])  #
+class Thread_Classification(QThread):
+	def __init__(self,model_dir,source_video,parent=None):
+		super(Thread_Classification, self).__init__(parent)
+		self.net = jetson.inference.imageNet(argv=['thread_classification.py', '--model='+model_dir+'/resnet18.onnx', '--labels='+model_dir+'/labels.txt', '--input_blob=input_0', '--output_blob=output_0'])  #
 		# create video sources & outputs
-		self.input = jetson.utils.videoSource("csi://0",argv=['classification.py', '--input-width=320', '--input-height=240', '--input-flip=none'])
+		#self.input = jetson.utils.videoSource("csi://0",argv=['thread_classification.py', '--input-width=320', '--input-height=240', '--input-flip=none'])
+		self.source_video = source_video
 		# Pin Setup:
 		GPIO.setmode(GPIO.BOARD)  # BCM pin-numbering scheme from Raspberry Pi
 		# set pin as an output pin with optional initial state of HIGH
 		GPIO.setup(class_0_pin, GPIO.OUT, initial=GPIO.LOW)
 		GPIO.setup(class_1_pin, GPIO.OUT, initial=GPIO.LOW)
 		GPIO.setup(class_2_pin, GPIO.OUT, initial=GPIO.LOW)
+		self.classification_OK = True
 
-	def classify(self):
+	def run(self):
 		try:
 			# process frames until the user exits
-			while True:
+			while self.classification_OK:
 				# capture the next image
-				img = self.input.Capture()
-				print(img.shape)
+				img = self.source_video.Capture()
 				# classify the image
 				class_id, confidence = self.net.Classify(img)
 				# Switch on/off the LEDs
@@ -64,10 +66,13 @@ class Classification:
 				print("image is recognized as '{:s}' (class #{:d}) with {:f}% confidence".format(class_desc, class_id, confidence * 100))
 				time.sleep(1)  # One inference per second
 		finally:
+			GPIO.setup(class_0_pin, GPIO.OUT, initial=GPIO.LOW)
+			GPIO.setup(class_1_pin, GPIO.OUT, initial=GPIO.LOW)
+			GPIO.setup(class_2_pin, GPIO.OUT, initial=GPIO.LOW)
 			GPIO.cleanup()
 
 if __name__ == '__main__':
- 	cls = Classification('Projects/good/model')
- 	cls.classify()
+ 	cls = Thread_Classification('Projects/good/model')
+ 	cls.start()
 
 

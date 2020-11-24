@@ -8,7 +8,7 @@ from pathlib import Path
 from thread_camera import *
 from record_images import record_images
 from trainer import Trainer
-from classification import Classification
+from thread_classification import Thread_Classification
 from onnx_export import ONNX_export
 import RPi.GPIO as GPIO
 
@@ -49,11 +49,10 @@ class GUI_hackathon_ai(QWidget):
         # Definition of the threads
         self.thread_camera = Thread_Camera()
         self.thread_camera.signalAfficherImage.connect(self.display_image_from_camera)
-        if self.thread_camera.sourceVideo and self.thread_camera.sourceVideo.isOpened():
+        if self.thread_camera.sourceVideo:
             self.thread_camera.start()
         # Event handlers
         self.btn_working_space.clicked.connect(self.select_ws)
-        self.sb_camera_id.valueChanged.connect(self.camera_changed)
         self.btn_project_ok.clicked.connect(self.create_project)
         self.btn_split_image.clicked.connect(self.split_images)
         self.btn_train_model.clicked.connect(self.train_model)
@@ -69,11 +68,8 @@ class GUI_hackathon_ai(QWidget):
         self.lbl_working_space.setText(str(self.ws))
         self.update_log('Selection of {} as working directory'.format(self.ws))
 
-    def camera_changed(self):
-        self.thread_camera.changeCamera(self.sb_camera_id.value())
-
     def display_image_from_camera(self, img):
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        #img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         (height, width, _) = img.shape
         mQImage = QImage(img, width, height, QImage.Format_RGB888)
         pix = QPixmap.fromImage(mQImage)
@@ -141,20 +137,16 @@ class GUI_hackathon_ai(QWidget):
         if not self.ws:  # Direct inference, no training before
             self.change_model()
         model_dir = self.ws / 'model'
-        cls = Classification(str(model_dir))
-        cls.classify()
+        self.thread_classification = Thread_Classification(str(model_dir),self.thread_camera.sourceVideo)
+        self.thread_classification.start()
 
     def update_log(self, txt):
         self.txt_log.appendPlainText('\n'+txt)
 
     def closeEvent(self, event):
-        self.thread_camera.sourceVideo.release()
-        GPIO.setmode(GPIO.BOARD)  # BCM pin-numbering scheme from Raspberry Pi
-        # set pin as an output pin with optional initial state of HIGH
-        GPIO.setup(class_0_pin, GPIO.OUT, initial=GPIO.LOW)
-        GPIO.setup(class_1_pin, GPIO.OUT, initial=GPIO.LOW)
-        GPIO.setup(class_2_pin, GPIO.OUT, initial=GPIO.LOW)
-        GPIO.cleanup()
+        print("STOP")
+        self.thread_camera.camera_running = False
+        self.thread_classification.classification_OK = False
         time.sleep(1)
         event.accept() # let the window close
 
