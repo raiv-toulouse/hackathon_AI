@@ -87,7 +87,7 @@ class Trainer:
         self.arch = 'resnet18'
         self.resolution = 224
         self.workers = 2
-        self.epochs = 35 # number of total epochs to run
+        self.epochs = 10 # number of total epochs to run
         self.start_epoch = 0 # manual epoch number (useful on restarts)
         self.batch_size = 8 # mini-batch size (default: 8), this is the total batch size of all GPUs on the current node when  using Data Parallel or Distributed Data Parallel
         self.lr = 0.1 # initial learning rate

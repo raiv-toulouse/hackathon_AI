@@ -64,7 +64,7 @@ class Thread_Camera(QThread):
 
     def run(self):
         """
-        Méthode principale du thread.
+        Thread main method
         """
         while True:
             ret, img = self.sourceVideo.read()
@@ -74,5 +74,5 @@ class Thread_Camera(QThread):
                     img_path = self.path_image/(str(self.ind_image)+'.jpg')
                     cv2.imwrite(str(img_path),img)
                     self.ind_image += 1
-                    sleep(0.1)
+                    sleep(0.3)
 

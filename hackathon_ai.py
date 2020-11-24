@@ -6,10 +6,17 @@ import random
 import time, os
 from pathlib import Path
 from thread_camera import *
-from thread_command import *
 from record_images import record_images
 from trainer import Trainer
+from classification import Classification
 from onnx_export import ONNX_export
+import RPi.GPIO as GPIO
+
+# Pin Definitions
+class_0_pin = 12  # BCM pin 18, BOARD pin 12
+class_1_pin = 16
+class_2_pin = 18
+
 #
 # Goal :
 #
@@ -29,23 +36,21 @@ class GUI_hackathon_ai(QWidget):
                                color: #00FF00;
                                font-size: 8;
                                font-family: Courier;}""")
-        # Check if there're some model directories
-        models = next(os.walk('/home/nano/hackathon_AI'))[1]
-        for d in ['.git','.idea','__pycache__']:  # We aren't interested by this folders (it's not models)
-            if d in models:
-                models.remove(d)
-        if models:  # if there're some models on the Nano computer
-            for m in models:
+        # Check if there're some project directories
+        projects = next(os.walk('/home/nano/hackathon_AI/Projects'))[1]
+        # for d in ['.git','.idea','__pycache__']:  # We aren't interested by this folders (it's not models)
+        #     if d in models:
+        #         models.remove(d)
+        if projects:  # if there're some models on the Nano computer
+            for m in projects:
                 self.cb_select_model.addItem(m)
             self.btn_inference.setEnabled(True)
-            self.temp_name = models[0]  # we select the first one (but the user can replace it)
+            self.temp_name = projects[0]  # we select the first one (but the user can replace it)
         # Definition of the threads
         self.thread_camera = Thread_Camera()
         self.thread_camera.signalAfficherImage.connect(self.display_image_from_camera)
         if self.thread_camera.sourceVideo and self.thread_camera.sourceVideo.isOpened():
             self.thread_camera.start()
-        self.thread_command = Thread_Command()
-        self.thread_command.display_msg_signal.connect(self.update_log)
         # Event handlers
         self.btn_working_space.clicked.connect(self.select_ws)
         self.sb_camera_id.valueChanged.connect(self.camera_changed)
@@ -57,10 +62,11 @@ class GUI_hackathon_ai(QWidget):
         self.cb_select_model.currentIndexChanged.connect(self.change_model)
 
     def change_model(self):
-        self.ws = Path(self.cb_select_model.currentText())
+        self.ws = Path('Projects/' + self.cb_select_model.currentText())
 
     def select_ws(self):
-        self.ws = Path(QFileDialog.getExistingDirectory(self, "Select Directory"))
+        self.ws = Path(QFileDialog.getExistingDirectory(self, caption="Select Directory",directory='Projects'))
+        self.lbl_working_space.setText(str(self.ws))
         self.update_log('Selection of {} as working directory'.format(self.ws))
 
     def camera_changed(self):
@@ -82,7 +88,7 @@ class GUI_hackathon_ai(QWidget):
         for i in range(nb_categories):
             ri = record_images(self.ws, self.thread_camera)
             self.vl_record.addWidget(ri)
-        self.update_log('Project creation')
+        self.update_log('End : Project creation')
         self.gb_recording.setEnabled(True)
         self.btn_split_image.setEnabled(True)
 
@@ -104,7 +110,7 @@ class GUI_hackathon_ai(QWidget):
         for l in lst_labels:
             labels_file.write(l + '\n')
         labels_file.close()
-        self.update_log('Images split to train, val and test directories')
+        self.update_log('End : Images split to train, val and test directories')
         self.btn_train_model.setEnabled(True)
 
     def split(self, files, dir_name, category):
@@ -113,43 +119,42 @@ class GUI_hackathon_ai(QWidget):
             f.replace(the_path / f.name)
 
     def train_model(self):
-        self.update_log("Begin training model")
+        self.update_log("Begin : Training model")
         model_dir = self.ws / 'model'
         data_dir = self.ws / 'data'
         trainer = Trainer(str(model_dir),str(data_dir))
         trainer.main()
+        self.update_log("End : Training model")
         self.btn_convert_onnx.setEnabled(True)
 
     def convert_to_onnx(self):
         # Now convert the model to a ONNX model
-        self.update_log("Begin conversion to ONNX.")
+        self.update_log("Begin : Conversion to ONNX.")
         model_dir = self.ws / 'model'
         exporter = ONNX_export(model_dir)
         exporter.export()
+        self.update_log("End : Conversion to ONNX.")
         self.btn_inference.setEnabled(True)
 
     def inference(self):
-        self.update_log("Begin inference. It may takes a long time. Be patient.")
+        self.update_log("Begin : Inference. It may takes a long time. Be patient.")
         if not self.ws:  # Direct inference, no training before
             self.change_model()
         model_dir = self.ws / 'model'
-
-        cmd = 'python3 classification.py --log-level=info --headless '
-        cmd += '--model=' + str(model_dir / 'resnet18.onnx') + ' --input_blob=input_0 --output_blob=output_0 '
-        cmd += '--labels=' + str(model_dir / 'labels.txt') + ' csi://0'
-        self.exec_cmd(cmd, 'Starting inference')
-
-    def exec_cmd(self, cmd, msg):
-        print(cmd)
-        self.thread_command.exec_command(cmd, msg)
+        cls = Classification(str(model_dir))
+        cls.classify()
 
     def update_log(self, txt):
-        self.txt_log.appendPlainText(txt)
+        self.txt_log.appendPlainText('\n'+txt)
 
     def closeEvent(self, event):
         self.thread_camera.sourceVideo.release()
-        cmd = 'python3 switch_off_led.py'
-        self.exec_cmd(cmd, 'Switch off the LEDs')
+        GPIO.setmode(GPIO.BOARD)  # BCM pin-numbering scheme from Raspberry Pi
+        # set pin as an output pin with optional initial state of HIGH
+        GPIO.setup(class_0_pin, GPIO.OUT, initial=GPIO.LOW)
+        GPIO.setup(class_1_pin, GPIO.OUT, initial=GPIO.LOW)
+        GPIO.setup(class_2_pin, GPIO.OUT, initial=GPIO.LOW)
+        GPIO.cleanup()
         time.sleep(1)
         event.accept() # let the window close
 

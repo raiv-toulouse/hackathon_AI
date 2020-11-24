@@ -35,9 +35,9 @@ class_2_pin = 18
 
 class Classification:
 	def __init__(self,model_dir):
-		self.net = jetson.inference.imageNet(argv=['classification.py', '--model='+model_dir+'/resnet18.onnx', '--labels='+model_dir+'/labels.txt', '--input_blob=input_0', '--output_blob=output_0', 'csi://0'])  # ,'--input_blob=input_0'
+		self.net = jetson.inference.imageNet(argv=['classification.py', '--model='+model_dir+'/resnet18.onnx', '--labels='+model_dir+'/labels.txt', '--input_blob=input_0', '--output_blob=output_0'])  #
 		# create video sources & outputs
-		self.input = jetson.utils.videoSource("csi://0")
+		self.input = jetson.utils.videoSource("csi://0",argv=['classification.py', '--input-width=320', '--input-height=240', '--input-flip=none'])
 		# Pin Setup:
 		GPIO.setmode(GPIO.BOARD)  # BCM pin-numbering scheme from Raspberry Pi
 		# set pin as an output pin with optional initial state of HIGH
@@ -51,6 +51,7 @@ class Classification:
 			while True:
 				# capture the next image
 				img = self.input.Capture()
+				print(img.shape)
 				# classify the image
 				class_id, confidence = self.net.Classify(img)
 				# Switch on/off the LEDs
@@ -64,9 +65,9 @@ class Classification:
 				time.sleep(1)  # One inference per second
 		finally:
 			GPIO.cleanup()
-	
 
-cls = Classification('tyty/model')
-cls.classify()
+if __name__ == '__main__':
+ 	cls = Classification('Projects/good/model')
+ 	cls.classify()
 
 
