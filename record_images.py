@@ -7,13 +7,14 @@ from pathlib import Path
 
 
 class record_images(QWidget):
-    def __init__(self,ws,thread):
+    def __init__(self, ws, thread_camera):
         super().__init__()
         loadUi('record_images.ui', self)
         self.btn_record.clicked.connect(self.record)
         self.ind = 0 # Indice of images
         self.ws = ws
-        self.thread = thread
+        self.thread_camera = thread_camera
+        self.thread_camera.signalAfficherImage.connect(self.update_nb_images)
         self.mode_create = True # True means we have to create the categorie and its directories
         self.mode_record = False # True : record the image, False : stop recording
 
@@ -25,14 +26,17 @@ class record_images(QWidget):
             self.le_category_name.setEnabled(False)
             self.btn_record.setText("Start")
             self.mode_create = False
-            self.mode_record = True
-        elif self.mode_record:
-            self.thread.start_recording(self.ind,self.ws/"images"/self.le_category_name.text())
+        elif not self.mode_record:
+            self.thread_camera.start_recording(self.ind, self.ws / "images" / self.le_category_name.text())
             self.btn_record.setText("Stop")
-            self.mode_record = False
+            self.mode_record = True
         else:
-            self.thread.stop_recording()
-            self.ind = self.thread.ind_image
+            self.thread_camera.stop_recording()
+            self.ind = self.thread_camera.ind_image
             self.lbl_nb_images.setText(str(self.ind))
             self.btn_record.setText("Start")
-            self.mode_record = True
+            self.mode_record = False
+
+    def update_nb_images(self,img,ind):
+        if self.mode_record:
+            self.lbl_nb_images.setText(str(ind))

@@ -10,7 +10,7 @@ import jetson.utils
 class Thread_Camera(QThread):
 
     # Signaux de communication avec l'IHM
-    signalAfficherImage = pyqtSignal(ndarray) # Pour afficher une image dans le QLabel nommé video_frame
+    signalAfficherImage = pyqtSignal(ndarray,int) # Pour afficher une image dans le QLabel nommé video_frame
 
     def __init__(self, parent=None):
         super(Thread_Camera, self).__init__(parent)
@@ -35,9 +35,10 @@ class Thread_Camera(QThread):
         while self.camera_running:
             cuda_img = self.sourceVideo.Capture()
             img = jetson.utils.cudaToNumpy(cuda_img)
-            self.signalAfficherImage.emit(img)
+            self.signalAfficherImage.emit(img, self.ind_image)
             if self.record_images:
                 img_path = self.path_image/(str(self.ind_image)+'.jpg')
+                img = cv2.cvtColor(img,cv2.COLOR_BGR2RGB)
                 cv2.imwrite(str(img_path),img)
                 self.ind_image += 1
                 sleep(0.3)
