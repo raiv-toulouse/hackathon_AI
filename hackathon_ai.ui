@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1013</width>
+    <width>1134</width>
     <height>751</height>
    </rect>
   </property>
@@ -191,6 +191,12 @@
      </item>
      <item>
       <widget class="QPlainTextEdit" name="txt_log">
+       <property name="minimumSize">
+        <size>
+         <width>800</width>
+         <height>0</height>
+        </size>
+       </property>
        <property name="font">
         <font>
          <pointsize>8</pointsize>

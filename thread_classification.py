@@ -25,27 +25,25 @@ from PyQt5.QtCore import QThread
 import jetson.inference
 import jetson.utils
 import RPi.GPIO as GPIO
-import time
+from time import sleep
 
 
 # Pin Definitions
-class_0_pin = 12  # BCM pin 18, BOARD pin 12
-class_1_pin = 16  
-class_2_pin = 18  
+class_pin = [12, 18, 16]  # BCM pin 18, BOARD pin 12
 
 class Thread_Classification(QThread):
 	def __init__(self,model_dir,source_video,parent=None):
 		super(Thread_Classification, self).__init__(parent)
+		print('Begin : classification, can take a long time to start')
+		sleep(0.01)
 		self.net = jetson.inference.imageNet(argv=['thread_classification.py', '--model='+model_dir+'/resnet18.onnx', '--labels='+model_dir+'/labels.txt', '--input_blob=input_0', '--output_blob=output_0'])  #
 		# create video sources & outputs
-		#self.input = jetson.utils.videoSource("csi://0",argv=['thread_classification.py', '--input-width=320', '--input-height=240', '--input-flip=none'])
 		self.source_video = source_video
 		# Pin Setup:
 		GPIO.setmode(GPIO.BOARD)  # BCM pin-numbering scheme from Raspberry Pi
 		# set pin as an output pin with optional initial state of HIGH
-		GPIO.setup(class_0_pin, GPIO.OUT, initial=GPIO.LOW)
-		GPIO.setup(class_1_pin, GPIO.OUT, initial=GPIO.LOW)
-		GPIO.setup(class_2_pin, GPIO.OUT, initial=GPIO.LOW)
+		for pin in class_pin:
+			GPIO.setup(pin, GPIO.OUT, initial=GPIO.LOW)
 		self.classification_OK = True
 
 	def run(self):
@@ -57,18 +55,16 @@ class Thread_Classification(QThread):
 				# classify the image
 				class_id, confidence = self.net.Classify(img)
 				# Switch on/off the LEDs
-				GPIO.output(class_0_pin, class_id==0)
-				GPIO.output(class_1_pin, class_id==1)
-				GPIO.output(class_2_pin, class_id==2)
+				for index, pin in enumerate(class_pin):
+					GPIO.output(pin, class_id==index)
 				# find the object description
 				class_desc = self.net.GetClassDesc(class_id)
 				# print out the result
 				print("image is recognized as '{:s}' (class #{:d}) with {:f}% confidence".format(class_desc, class_id, confidence * 100))
-				time.sleep(1)  # One inference per second
+				sleep(1)  # One inference per second
 		finally:
-			GPIO.setup(class_0_pin, GPIO.OUT, initial=GPIO.LOW)
-			GPIO.setup(class_1_pin, GPIO.OUT, initial=GPIO.LOW)
-			GPIO.setup(class_2_pin, GPIO.OUT, initial=GPIO.LOW)
+			for pin in class_pin:
+				GPIO.setup(pin, GPIO.OUT, initial=GPIO.LOW)
 			GPIO.cleanup()
 
 if __name__ == '__main__':

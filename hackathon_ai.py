@@ -2,25 +2,21 @@
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.uic import loadUi
+from PyQt5.QtCore import QTimer
 import random
 import time, os
 from pathlib import Path
 from thread_camera import *
 from record_images import record_images
-from trainer import Trainer
+from thread_trainer import Thread_Trainer
 from thread_classification import Thread_Classification
-from onnx_export import ONNX_export
-import RPi.GPIO as GPIO
-
-# Pin Definitions
-class_0_pin = 12  # BCM pin 18, BOARD pin 12
-class_1_pin = 16
-class_2_pin = 18
+from thread_onnx_export import Thread_ONNX_export
+from io import StringIO
+import sys
 
 #
 # Goal :
 #
-
 class GUI_hackathon_ai(QWidget):
     """
     GUI
@@ -29,6 +25,8 @@ class GUI_hackathon_ai(QWidget):
     def __init__(self, parent=None):
         super().__init__()
         loadUi('hackathon_ai.ui', self)
+        # Redirection of stdout (print)
+        sys.stdout = self.mystdout = StringIO()
         self.ws = None
         # Change font, colour of text entry box
         self.txt_log.setStyleSheet(
@@ -51,6 +49,8 @@ class GUI_hackathon_ai(QWidget):
         self.thread_camera.signalAfficherImage.connect(self.display_image_from_camera)
         if self.thread_camera.sourceVideo:
             self.thread_camera.start()
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.write)
         # Event handlers
         self.btn_working_space.clicked.connect(self.select_ws)
         self.btn_project_ok.clicked.connect(self.create_project)
@@ -59,6 +59,7 @@ class GUI_hackathon_ai(QWidget):
         self.btn_convert_onnx.clicked.connect(self.convert_to_onnx)
         self.btn_inference.clicked.connect(self.inference)
         self.cb_select_model.currentIndexChanged.connect(self.change_model)
+        self.timer.start(500)
 
     def change_model(self):
         self.ws = Path('Projects/' + self.cb_select_model.currentText())
@@ -66,10 +67,9 @@ class GUI_hackathon_ai(QWidget):
     def select_ws(self):
         self.ws = Path(QFileDialog.getExistingDirectory(self, caption="Select Directory",directory='Projects'))
         self.lbl_working_space.setText(str(self.ws))
-        self.update_log('Selection of {} as working directory'.format(self.ws))
+        print('Selection of {} as working directory'.format(self.ws))
 
-    def display_image_from_camera(self, img):
-        #img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    def display_image_from_camera(self, img, ind):
         (height, width, _) = img.shape
         mQImage = QImage(img, width, height, QImage.Format_RGB888)
         pix = QPixmap.fromImage(mQImage)
@@ -84,7 +84,7 @@ class GUI_hackathon_ai(QWidget):
         for i in range(nb_categories):
             ri = record_images(self.ws, self.thread_camera)
             self.vl_record.addWidget(ri)
-        self.update_log('End : Project creation')
+        print('End : Project creation')
         self.gb_recording.setEnabled(True)
         self.btn_split_image.setEnabled(True)
 
@@ -106,7 +106,7 @@ class GUI_hackathon_ai(QWidget):
         for l in lst_labels:
             labels_file.write(l + '\n')
         labels_file.close()
-        self.update_log('End : Images split to train, val and test directories')
+        print('End : Images split to train, val and test directories')
         self.btn_train_model.setEnabled(True)
 
     def split(self, files, dir_name, category):
@@ -115,25 +115,31 @@ class GUI_hackathon_ai(QWidget):
             f.replace(the_path / f.name)
 
     def train_model(self):
-        self.update_log("Begin : Training model")
+        print("Begin : Training model")
         model_dir = self.ws / 'model'
         data_dir = self.ws / 'data'
-        trainer = Trainer(str(model_dir),str(data_dir))
-        trainer.main()
-        self.update_log("End : Training model")
+        self.trainer = Thread_Trainer(str(model_dir), str(data_dir))
+        self.trainer.signalEndTraining.connect(self.end_training)
+        self.trainer.start()
+
+    def end_training(self):
+        print("End : Training model")
         self.btn_convert_onnx.setEnabled(True)
 
     def convert_to_onnx(self):
         # Now convert the model to a ONNX model
-        self.update_log("Begin : Conversion to ONNX.")
+        print("Begin : Conversion to ONNX.")
         model_dir = self.ws / 'model'
-        exporter = ONNX_export(model_dir)
-        exporter.export()
-        self.update_log("End : Conversion to ONNX.")
+        self.exporter = Thread_ONNX_export(model_dir)
+        self.exporter.signalEndExport.connect(self.end_convert)
+        self.exporter.start()
+
+    def end_convert(self):
+        print("End : Conversion to ONNX.")
         self.btn_inference.setEnabled(True)
 
     def inference(self):
-        self.update_log("Begin : Inference. It may takes a long time. Be patient.")
+        print("Begin : Inference. It may takes a long time. Be patient.")
         if not self.ws:  # Direct inference, no training before
             self.change_model()
         model_dir = self.ws / 'model'
@@ -141,12 +147,20 @@ class GUI_hackathon_ai(QWidget):
         self.thread_classification.start()
 
     def update_log(self, txt):
-        self.txt_log.appendPlainText('\n'+txt)
+        print('\n'+txt)
+
+    def write(self):
+        txt = str(self.mystdout.getvalue())
+        if txt:
+            self.txt_log.appendPlainText(txt)
+            self.mystdout.close()
+            sys.stdout = self.mystdout = StringIO()
 
     def closeEvent(self, event):
         print("STOP")
         self.thread_camera.camera_running = False
-        self.thread_classification.classification_OK = False
+        if self.thread_classification:
+            self.thread_classification.classification_OK = False
         time.sleep(1)
         event.accept() # let the window close
 

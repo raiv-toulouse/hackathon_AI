@@ -5,27 +5,25 @@
 # For a step-by-step guide to transfer learning with PyTorch, see:
 #           https://pytorch.org/tutorials/beginner/finetuning_torchvision_models_tutorial.html
 #
-import argparse
 import os
 import random
 import shutil
 import time
 import warnings
-
 import torch
 import torch.nn as nn
 import torch.nn.parallel
 import torch.backends.cudnn as cudnn
 import torch.distributed as dist
 import torch.optim
-import torch.multiprocessing as mp
 import torch.utils.data
 import torch.utils.data.distributed
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torchvision.models as models
-
 from reshape import reshape_model
+from PyQt5.QtCore import QThread,pyqtSignal
+from time import sleep
 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -80,8 +78,11 @@ class ProgressMeter(object):
         return '[' + fmt + '/' + fmt.format(num_batches) + ']'
 
 
-class Trainer:
-    def __init__(self,model_dir,data_dir):
+class Thread_Trainer(QThread):
+    signalEndTraining = pyqtSignal()
+
+    def __init__(self,model_dir,data_dir,parent=None):
+        super(Thread_Trainer, self).__init__(parent)
         self.data_dir = data_dir
         self.model_dir = model_dir
         self.arch = 'resnet18'
@@ -102,14 +103,13 @@ class Trainer:
         self.seed = None # seed for initializing training.
         self.gpu = 0 # GPU id to use.
         self.multiprocessing_distributed = False # ', action='store_true',  help='Use multi-processing distributed training to launch '  'N processes per node, which has N GPUs. This is the ' 'fastest way to use PyTorch for either single node or '  'multi node data parallel training')
-
         self.best_acc1 = 0
 
     
     #
     # initiate worker threads (if using distributed multi-GPU)
     #
-    def main(self):   
+    def run(self):
         if self.seed is not None:
             random.seed(self.seed)
             torch.manual_seed(self.seed)
@@ -128,7 +128,7 @@ class Trainer:
         ngpus_per_node = torch.cuda.device_count()
         # Simply call main_worker function
         self.main_worker(self.gpu, ngpus_per_node)
-    
+        self.signalEndTraining.emit()
     
     #
     # worker thread (per-GPU)
@@ -242,6 +242,8 @@ class Trainer:
     
         # train for the specified number of epochs
         for epoch in range(self.start_epoch, self.epochs):
+            print('Begin epoch #{}'.format(epoch))
+            sleep(0.001)
             if self.distributed:
                 train_sampler.set_epoch(epoch)
     
