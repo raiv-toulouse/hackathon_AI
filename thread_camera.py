@@ -42,5 +42,5 @@ class Thread_Camera(QThread):
                 cv2.imwrite(str(img_path),img)
                 self.ind_image += 1
                 sleep(0.3)
-            sleep(0.01)
+            sleep(0.1)
 
