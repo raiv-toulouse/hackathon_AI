@@ -14,7 +14,8 @@ class Thread_Camera(QThread):
 
     def __init__(self, parent=None):
         super(Thread_Camera, self).__init__(parent)
-        self.sourceVideo = jetson.utils.videoSource("csi://0",argv=['threadCamera', '--input-width=320', '--input-height=240', '--input-flip=none'])
+        #self.sourceVideo = jetson.utils.videoSource("csi://0",argv=['threadCamera', '--input-width=320', '--input-height=240', '--input-flip=none'])
+        self.sourceVideo = jetson.utils.videoSource("/dev/video0",argv=['threadCamera', '--input-width=320', '--input-height=240', '--input-flip=none'])
         self.ind_image = 0
         self.path_image = None
         self.record_images = False
