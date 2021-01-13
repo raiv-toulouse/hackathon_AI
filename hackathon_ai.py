@@ -58,7 +58,7 @@ class GUI_hackathon_ai(QWidget):
         self.btn_train_model.clicked.connect(self.train_model)
         self.btn_convert_onnx.clicked.connect(self.convert_to_onnx)
         self.btn_inference.clicked.connect(self.inference)
-        self.cb_select_model.currentIndexChanged.connect(self.change_model)
+        self.cb_select_model.currentIndexChanged.connect(self.change_ws)
         self.lst_epochs = []
         self.lst_accuracys = []
         self.lst_loss = []
@@ -80,13 +80,22 @@ class GUI_hackathon_ai(QWidget):
         self.gv_accuracy.canvas.draw_idle()  # draw_idle() à la place de draw() pour corriger un pb de refresh avec MAC
         self.gv_loss.canvas.draw_idle()  # draw_idle() à la place de draw() pour corriger un pb de refresh avec MAC
 
-    def change_model(self):
-        self.ws = Path('Projects/' + self.cb_select_model.currentText())
+    def change_ws(self):
+        ws = Path('Projects/' + self.cb_select_model.currentText())
+        self.set_ws(ws)
 
     def select_ws(self):
-        self.ws = Path(QFileDialog.getExistingDirectory(self, caption="Select Directory",directory='Projects'))
+        ws = Path(QFileDialog.getExistingDirectory(self, caption="Select Directory",directory='Projects'))
+        self.set_ws(ws)
+
+    def set_ws(self,ws):
+        self.ws = ws
         self.lbl_working_space.setText(str(self.ws))
         print('Selection of {} as working directory'.format(self.ws))
+        if (self.ws/'data').exists(): # We can use the images
+            nb_categories = sum(1 for x in (self.ws/'data/train').glob('*'))  # nb of directories in train = nb of categories
+            self.sb_nb_categories.setValue(nb_categories)
+            self.btn_train_model.setEnabled(True)
 
     def display_image_from_camera(self, img, ind):
         (height, width, _) = img.shape
@@ -172,7 +181,7 @@ class GUI_hackathon_ai(QWidget):
     def inference(self):
         print("Begin : Inference. It may takes a long time. Be patient.")
         if not self.ws:  # Direct inference, no training before
-            self.change_model()
+            self.change_ws()
         model_dir = self.ws / 'model'
         self.thread_classification = Thread_Classification(str(model_dir),self.thread_camera.sourceVideo)
         self.thread_classification.start()
