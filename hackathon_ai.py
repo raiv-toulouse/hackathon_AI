@@ -59,7 +59,26 @@ class GUI_hackathon_ai(QWidget):
         self.btn_convert_onnx.clicked.connect(self.convert_to_onnx)
         self.btn_inference.clicked.connect(self.inference)
         self.cb_select_model.currentIndexChanged.connect(self.change_model)
+        self.lst_epochs = []
+        self.lst_accuracys = []
+        self.lst_loss = []
+        self.generate_plots()
         self.timer.start(500)
+
+    def generate_plots(self):
+        # generate the plots
+        self.accuracy_ax = self.accuracy_plot.canvas.ax
+        self.loss_ax = self.loss_plot.canvas.ax
+        # set specific limits for X axes
+        self.accuracy_ax.set_xlim(1, self.sb_epochs)
+        self.accuracy_ax.set_autoscale_on(True)
+        self.loss_ax.set_xlim(1, self.sb_epochs)
+        self.loss_ax.set_autoscale_on(True)
+        self.plot_accuracy, = self.accuracy_ax.plot(self.lst_epochs, self.lst_accuracys,label="Accuracy")
+        self.plot_loss, = self.loss_ax.plot(self.lst_epochs, self.lst_loss,label="Loss")
+        # generate the canvas to display the plots
+        self.gv_accuracy.canvas.draw_idle()  # draw_idle() à la place de draw() pour corriger un pb de refresh avec MAC
+        self.gv_loss.canvas.draw_idle()  # draw_idle() à la place de draw() pour corriger un pb de refresh avec MAC
 
     def change_model(self):
         self.ws = Path('Projects/' + self.cb_select_model.currentText())
@@ -118,13 +137,25 @@ class GUI_hackathon_ai(QWidget):
         print("Begin : Training model")
         model_dir = self.ws / 'model'
         data_dir = self.ws / 'data'
-        self.trainer = Thread_Trainer(str(model_dir), str(data_dir))
+        nb_epochs = self.sb_epochs.value()
+        self.trainer = Thread_Trainer(str(model_dir), str(data_dir), nb_epochs)
         self.trainer.signalEndTraining.connect(self.end_training)
+        self.trainer.signalAccuracyLossData.connect(self.add_data_to_plots)
         self.trainer.start()
 
     def end_training(self):
         print("End : Training model")
         self.btn_convert_onnx.setEnabled(True)
+
+    def add_data_to_plots(self,epoch,loss,accuray):
+        print('Epoch {}, loss {}, accuracy {}'.format(epoch,loss,accuray))
+        self.lst_epochs.append(epoch)
+        self.lst_loss.append(loss)
+        self.lst_accuracys.append(accuray)
+        self.plot_loss.set_data(self.lst_epochs, self.lst_loss) # Update loss plot
+        self.gv_loss.canvas.draw_idle()
+        self.plot_accuracy.set_data(self.lst_epochs, self.lst_accuracys) # Update loss plot
+        self.gv_accuracy.canvas.draw_idle()
 
     def convert_to_onnx(self):
         # Now convert the model to a ONNX model

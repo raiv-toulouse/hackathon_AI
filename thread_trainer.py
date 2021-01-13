@@ -54,7 +54,7 @@ class AverageMeter(object):
         self.avg = self.sum / self.count
 
     def __str__(self):
-        fmtstr = '{name} {val' + self.fmt + '} ({avg' + self.fmt + '})'
+        fmtstr = '{name} {val' + self.fmt + '} '
         return fmtstr.format(**self.__dict__)
 
 
@@ -80,15 +80,16 @@ class ProgressMeter(object):
 
 class Thread_Trainer(QThread):
     signalEndTraining = pyqtSignal()
+    signalAccuracyLossData = pyqtSignal(int,float,float)
 
-    def __init__(self,model_dir,data_dir,parent=None):
+    def __init__(self,model_dir,data_dir,nb_epochs,parent=None):
         super(Thread_Trainer, self).__init__(parent)
         self.data_dir = data_dir
         self.model_dir = model_dir
         self.arch = 'resnet18'
         self.resolution = 224
         self.workers = 2
-        self.epochs = 10 # number of total epochs to run
+        self.epochs = nb_epochs # number of total epochs to run
         self.start_epoch = 0 # manual epoch number (useful on restarts)
         self.batch_size = 8 # mini-batch size (default: 8), this is the total batch size of all GPUs on the current node when  using Data Parallel or Distributed Data Parallel
         self.lr = 0.1 # initial learning rate
@@ -235,8 +236,6 @@ class Thread_Trainer(QThread):
         optimizer = torch.optim.SGD(model.parameters(), self.lr,
                                     momentum=self.momentum,
                                     weight_decay=self.weight_decay)
-    
-    
         cudnn.benchmark = True
     
     
@@ -279,12 +278,11 @@ class Thread_Trainer(QThread):
     def train(self, train_loader, model, criterion, optimizer, epoch, num_classes):
         batch_time = AverageMeter('Time', ':6.3f')
         data_time = AverageMeter('Data', ':6.3f')
-        losses = AverageMeter('Loss', ':.4e')
-        top1 = AverageMeter('Acc@1', ':6.2f')
-        top5 = AverageMeter('Acc@5', ':6.2f')
+        losses = AverageMeter('Loss', ':6.2f')
+        top1 = AverageMeter('Accuracy', ':6.2f')
         progress = ProgressMeter(
             len(train_loader),
-            [batch_time, data_time, losses, top1, top5],
+            [batch_time, data_time, losses, top1],
             prefix="Epoch: [{}]".format(epoch))
     
         # switch to train mode
@@ -311,8 +309,10 @@ class Thread_Trainer(QThread):
             acc1, acc5 = self.accuracy(output, target, topk=(1, min(5, num_classes)))
             losses.update(loss.item(), images.size(0))
             top1.update(acc1[0], images.size(0))
-            top5.update(acc5[0], images.size(0))
-    
+
+            # Send data to add in plots
+            self.signalAccuracyLossData.emit(epoch,loss,acc1)
+
             # compute gradient and do SGD step
             optimizer.zero_grad()
             loss.backward()

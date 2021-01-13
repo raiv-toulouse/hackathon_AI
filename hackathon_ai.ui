@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1134</width>
-    <height>751</height>
+    <width>1424</width>
+    <height>744</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -34,10 +34,13 @@
             </property>
            </widget>
           </item>
-          <item row="1" column="0">
-           <widget class="QLabel" name="lbl_nb_categories">
+          <item row="3" column="0" colspan="2">
+           <widget class="QPushButton" name="btn_project_ok">
+            <property name="toolTip">
+             <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Create the 'train', 'val' and 'test' sub-directories to distribute/split images in.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+            </property>
             <property name="text">
-             <string># of categories</string>
+             <string>Project OK</string>
             </property>
            </widget>
           </item>
@@ -51,16 +54,6 @@
             </property>
            </widget>
           </item>
-          <item row="2" column="0" colspan="2">
-           <widget class="QPushButton" name="btn_project_ok">
-            <property name="toolTip">
-             <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Create the 'train', 'val' and 'test' sub-directories to distribute/split images in.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-            </property>
-            <property name="text">
-             <string>Project OK</string>
-            </property>
-           </widget>
-          </item>
           <item row="1" column="1">
            <widget class="QSpinBox" name="sb_nb_categories">
             <property name="toolTip">
@@ -71,6 +64,30 @@
             </property>
             <property name="prefix">
              <string/>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="lbl_nb_categories">
+            <property name="text">
+             <string># of categories</string>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="0">
+           <widget class="QLabel" name="label">
+            <property name="text">
+             <string># of epochs</string>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="1">
+           <widget class="QSpinBox" name="sb_epochs">
+            <property name="minimum">
+             <number>5</number>
+            </property>
+            <property name="value">
+             <number>10</number>
             </property>
            </widget>
           </item>
@@ -187,6 +204,12 @@
          </property>
         </widget>
        </item>
+       <item>
+        <widget class="MplWidget" name="gv_accuracy"/>
+       </item>
+       <item>
+        <widget class="QGraphicsView" name="gv_loss"/>
+       </item>
       </layout>
      </item>
      <item>
@@ -211,6 +234,13 @@
    </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>MplWidget</class>
+   <extends>QGraphicsView</extends>
+   <header>mplwidget.h</header>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>
