@@ -208,7 +208,7 @@
         <widget class="MplWidget" name="gv_accuracy"/>
        </item>
        <item>
-        <widget class="QGraphicsView" name="gv_loss"/>
+        <widget class="MplWidget" name="gv_loss"/>
        </item>
       </layout>
      </item>
