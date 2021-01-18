@@ -14,7 +14,8 @@ class Thread_Camera(QThread):
 
     def __init__(self, parent=None):
         super(Thread_Camera, self).__init__(parent)
-        self.sourceVideo = jetson.utils.videoSource("csi://0",argv=['threadCamera', '--input-width=320', '--input-height=240', '--input-flip=none'])
+        #self.sourceVideo = jetson.utils.videoSource("csi://0",argv=['threadCamera', '--input-width=320', '--input-height=240', '--input-flip=none'])
+        self.sourceVideo = jetson.utils.videoSource("/dev/video0",argv=['threadCamera', '--input-width=320', '--input-height=240', '--input-flip=none'])
         self.ind_image = 0
         self.path_image = None
         self.record_images = False
@@ -36,11 +37,11 @@ class Thread_Camera(QThread):
             cuda_img = self.sourceVideo.Capture()
             img = jetson.utils.cudaToNumpy(cuda_img)
             self.signalAfficherImage.emit(img, self.ind_image)
+            sleep(0.1)
             if self.record_images:
                 img_path = self.path_image/(str(self.ind_image)+'.jpg')
                 img = cv2.cvtColor(img,cv2.COLOR_BGR2RGB)
                 cv2.imwrite(str(img_path),img)
                 self.ind_image += 1
                 sleep(0.3)
-            sleep(0.1)
 

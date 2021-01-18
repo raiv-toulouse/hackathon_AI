@@ -59,26 +59,26 @@ class GUI_hackathon_ai(QWidget):
         self.btn_convert_onnx.clicked.connect(self.convert_to_onnx)
         self.btn_inference.clicked.connect(self.inference)
         self.cb_select_model.currentIndexChanged.connect(self.change_ws)
-        self.lst_epochs = []
-        self.lst_accuracys = []
-        self.lst_loss = []
-        self.generate_plots()
+        # self.lst_epochs = []
+        # self.lst_accuracys = []
+        # self.lst_loss = []
+        # self.generate_plots()
         self.timer.start(500)
 
-    def generate_plots(self):
-        # generate the plots
-        self.accuracy_ax = self.accuracy_plot.canvas.ax
-        self.loss_ax = self.loss_plot.canvas.ax
-        # set specific limits for X axes
-        self.accuracy_ax.set_xlim(1, self.sb_epochs)
-        self.accuracy_ax.set_autoscale_on(True)
-        self.loss_ax.set_xlim(1, self.sb_epochs)
-        self.loss_ax.set_autoscale_on(True)
-        self.plot_accuracy, = self.accuracy_ax.plot(self.lst_epochs, self.lst_accuracys,label="Accuracy")
-        self.plot_loss, = self.loss_ax.plot(self.lst_epochs, self.lst_loss,label="Loss")
-        # generate the canvas to display the plots
-        self.gv_accuracy.canvas.draw_idle()  # draw_idle() à la place de draw() pour corriger un pb de refresh avec MAC
-        self.gv_loss.canvas.draw_idle()  # draw_idle() à la place de draw() pour corriger un pb de refresh avec MAC
+    # def generate_plots(self):
+    #     # generate the plots
+    #     self.accuracy_ax = self.accuracy_plot.canvas.ax
+    #     self.loss_ax = self.loss_plot.canvas.ax
+    #     # set specific limits for X axes
+    #     self.accuracy_ax.set_xlim(1, self.sb_epochs)
+    #     self.accuracy_ax.set_autoscale_on(True)
+    #     self.loss_ax.set_xlim(1, self.sb_epochs)
+    #     self.loss_ax.set_autoscale_on(True)
+    #     self.plot_accuracy, = self.accuracy_ax.plot(self.lst_epochs, self.lst_accuracys,label="Accuracy")
+    #     self.plot_loss, = self.loss_ax.plot(self.lst_epochs, self.lst_loss,label="Loss")
+    #     # generate the canvas to display the plots
+    #     self.gv_accuracy.canvas.draw_idle()  # draw_idle() à la place de draw() pour corriger un pb de refresh avec MAC
+    #     self.gv_loss.canvas.draw_idle()  # draw_idle() à la place de draw() pour corriger un pb de refresh avec MAC
 
     def change_ws(self):
         ws = Path('Projects/' + self.cb_select_model.currentText())
@@ -105,7 +105,7 @@ class GUI_hackathon_ai(QWidget):
 
     def create_project(self):
         # Create directories in working space
-        for d in ["images","data/val","data/train","data/test","model"]:
+        for d in ["images","data/val","data/train","model"]:
             dir = self.ws / d
             dir.mkdir(parents=True)
         nb_categories = self.sb_nb_categories.value()
@@ -125,16 +125,15 @@ class GUI_hackathon_ai(QWidget):
             files = [f for f in cat_dir.iterdir()]
             random.shuffle(files)
             ind_80 = int(len(files) * 0.8)  # 80 %
-            ind_10 = int(len(files) * 0.1)  # 10 %
+            ind_20 = int(len(files) * 0.2)  # 20 %
             self.split(files[:ind_80], 'train', category)
-            self.split(files[ind_80:ind_80 + ind_10], 'val', category)
-            self.split(files[ind_80 + ind_10:], 'test', category)
+            self.split(files[ind_80:ind_80 + ind_20], 'val', category)
         labels_file = open(str(self.ws / 'model' / 'labels.txt'), 'w')
         lst_labels.sort()
         for l in lst_labels:
             labels_file.write(l + '\n')
         labels_file.close()
-        print('End : Images split to train, val and test directories')
+        print('End : Images split to train and val directories')
         self.btn_train_model.setEnabled(True)
 
     def split(self, files, dir_name, category):
@@ -149,22 +148,22 @@ class GUI_hackathon_ai(QWidget):
         nb_epochs = self.sb_epochs.value()
         self.trainer = Thread_Trainer(str(model_dir), str(data_dir), nb_epochs)
         self.trainer.signalEndTraining.connect(self.end_training)
-        self.trainer.signalAccuracyLossData.connect(self.add_data_to_plots)
+#        self.trainer.signalAccuracyLossData.connect(self.add_data_to_plots)
         self.trainer.start()
 
     def end_training(self):
         print("End : Training model")
         self.btn_convert_onnx.setEnabled(True)
 
-    def add_data_to_plots(self,epoch,loss,accuray):
-        print('Epoch {}, loss {}, accuracy {}'.format(epoch,loss,accuray))
-        self.lst_epochs.append(epoch)
-        self.lst_loss.append(loss)
-        self.lst_accuracys.append(accuray)
-        self.plot_loss.set_data(self.lst_epochs, self.lst_loss) # Update loss plot
-        self.gv_loss.canvas.draw_idle()
-        self.plot_accuracy.set_data(self.lst_epochs, self.lst_accuracys) # Update loss plot
-        self.gv_accuracy.canvas.draw_idle()
+    # def add_data_to_plots(self,epoch,loss,accuray):
+    #     print('Epoch {}, loss {}, accuracy {}'.format(epoch,loss,accuray))
+    #     self.lst_epochs.append(epoch)
+    #     self.lst_loss.append(loss)
+    #     self.lst_accuracys.append(accuray)
+    #     self.plot_loss.set_data(self.lst_epochs, self.lst_loss) # Update loss plot
+    #     self.gv_loss.canvas.draw_idle()
+    #     self.plot_accuracy.set_data(self.lst_epochs, self.lst_accuracys) # Update loss plot
+    #     self.gv_accuracy.canvas.draw_idle()
 
     def convert_to_onnx(self):
         # Now convert the model to a ONNX model

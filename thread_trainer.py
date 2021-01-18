@@ -6,30 +6,32 @@
 #           https://pytorch.org/tutorials/beginner/finetuning_torchvision_models_tutorial.html
 #
 import os
-import random
+import numpy as np
 import shutil
 import time
-import warnings
+import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.nn.parallel
 import torch.backends.cudnn as cudnn
-import torch.distributed as dist
 import torch.optim
 import torch.utils.data
 import torch.utils.data.distributed
+import torch.nn.functional as F
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torchvision.models as models
 from reshape import reshape_model
 from PyQt5.QtCore import QThread,pyqtSignal
 from time import sleep
+from torch.utils.tensorboard import SummaryWriter
+import torchvision
 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
     and callable(models.__dict__[name]))
 
-
+LOSS_THRESHOLD = 10  # Start ploting loss if under LOSS_THRESHOLD
 #
 # statistic averaging
 #
@@ -56,7 +58,6 @@ class AverageMeter(object):
     def __str__(self):
         fmtstr = '{name} {val' + self.fmt + '} '
         return fmtstr.format(**self.__dict__)
-
 
 #
 # progress metering
@@ -105,63 +106,28 @@ class Thread_Trainer(QThread):
         self.gpu = 0 # GPU id to use.
         self.multiprocessing_distributed = False # ', action='store_true',  help='Use multi-processing distributed training to launch '  'N processes per node, which has N GPUs. This is the ' 'fastest way to use PyTorch for either single node or '  'multi node data parallel training')
         self.best_acc1 = 0
+        # transforms
+        self.mean = [0.485, 0.456, 0.406]
+        self.std = [0.229, 0.224, 0.225]
 
-    
     #
     # initiate worker threads (if using distributed multi-GPU)
     #
     def run(self):
-        if self.seed is not None:
-            random.seed(self.seed)
-            torch.manual_seed(self.seed)
-            cudnn.deterministic = True
-            warnings.warn('You have chosen to seed training. '
-                          'This will turn on the CUDNN deterministic setting, '
-                          'which can slow down your training considerably! '
-                          'You may see unexpected behavior when restarting '
-                          'from checkpoints.')
-        #if self.gpu is not None:
-        #    warnings.warn('You have chosen a specific GPU. This will completely '
-        #                  'disable data parallelism.')
-        if self.dist_url == "env://" and self.world_size == -1:
-            self.world_size = int(os.environ["WORLD_SIZE"])
-        self.distributed = self.world_size > 1 or self.multiprocessing_distributed
-        ngpus_per_node = torch.cuda.device_count()
-        # Simply call main_worker function
-        self.main_worker(self.gpu, ngpus_per_node)
-        self.signalEndTraining.emit()
-    
-    #
-    # worker thread (per-GPU)
-    #
-    def main_worker(self,gpu, ngpus_per_node):
-
-        self.gpu = gpu
-    
-        if self.gpu is not None:
-            print("Use GPU: {} for training".format(self.gpu))
-    
-        if self.distributed:
-            if self.dist_url == "env://" and self.rank == -1:
-                self.rank = int(os.environ["RANK"])
-            if self.multiprocessing_distributed:
-                # For multiprocessing distributed training, rank needs to be the
-                # global rank among all the processes
-                self.rank = self.rank * ngpus_per_node + gpu
-            dist.init_process_group(backend=self.dist_backend, init_method=self.dist_url,
-                                    world_size=self.world_size, rank=self.rank)
+        self.gpu = 0
+        print("Use GPU: {} for training".format(self.gpu))
     
         # data loading code
         traindir = os.path.join(self.data_dir, 'train')
         valdir = os.path.join(self.data_dir, 'val')
-        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                         std=[0.229, 0.224, 0.225])
+        normalize = transforms.Normalize(mean=self.mean,
+                                         std=self.std)
     
         train_dataset = datasets.ImageFolder(
             traindir,
             transforms.Compose([
                 #transforms.Resize(224),
-                transforms.RandomResizedCrop(self.resolution),
+                transforms.RandomResizedCrop(self.resolution, scale=(0.5, 1.0), ratio=(1.0,1.0)),  # Pour ne pas avoir de déformation de l'image
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
                 normalize,
@@ -169,67 +135,39 @@ class Thread_Trainer(QThread):
     
         num_classes = len(train_dataset.classes)
         print('=> dataset classes:  ' + str(num_classes) + ' ' + str(train_dataset.classes))
-    
-        if self.distributed:
-            train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
-        else:
-            train_sampler = None
-    
+
         train_loader = torch.utils.data.DataLoader(
-            train_dataset, batch_size=self.batch_size, shuffle=(train_sampler is None),
-            num_workers=self.workers, pin_memory=True, sampler=train_sampler)
-    
-        val_loader = torch.utils.data.DataLoader(
-            datasets.ImageFolder(valdir, transforms.Compose([
+            train_dataset, batch_size=self.batch_size, shuffle=True,
+            num_workers=self.workers, pin_memory=True, sampler=None)
+
+        val_dataset = datasets.ImageFolder(valdir, transforms.Compose([
                 transforms.Resize(256),
                 transforms.CenterCrop(self.resolution),
                 transforms.ToTensor(),
                 normalize,
-            ])),
+            ]))
+
+        val_loader = torch.utils.data.DataLoader(
+            val_dataset,
             batch_size=self.batch_size, shuffle=False,
+            num_workers=self.workers, pin_memory=True)
+
+        val_loader_all = torch.utils.data.DataLoader(
+            val_dataset,
+            batch_size=len(val_dataset), shuffle=False,
             num_workers=self.workers, pin_memory=True)
     
         # create or load the model if using pre-trained (the default)
-        if self.pretrained:
-            print("=> using pre-trained model '{}'".format(self.arch))
-            model = models.__dict__[self.arch](pretrained=True)
-        else:
-            print("=> creating model '{}'".format(self.arch))
-            model = models.__dict__[self.arch]()
-    
+        print("=> using pre-trained model '{}'".format(self.arch))
+        model = models.__dict__[self.arch](pretrained=True)
+
         # reshape the model for the number of classes in the dataset
-        model = reshape_model(model, self.arch, num_classes)
+        model_cpu = reshape_model(model, self.arch, num_classes)
     
         # transfer the model to the GPU that it should be run on
-        if self.distributed:
-            # For multiprocessing distributed, DistributedDataParallel constructor
-            # should always set the single device scope, otherwise,
-            # DistributedDataParallel will use all available devices.
-            if self.gpu is not None:
-                torch.cuda.set_device(self.gpu)
-                model.cuda(self.gpu)
-                # When using a single GPU per process and per
-                # DistributedDataParallel, we need to divide the batch size
-                # ourselves based on the total number of GPUs we have
-                self.batch_size = int(self.batch_size / ngpus_per_node)
-                self.workers = int(self.workers / ngpus_per_node)
-                model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[self.gpu])
-            else:
-                model.cuda()
-                # DistributedDataParallel will divide and allocate batch_size to all
-                # available GPUs if device_ids are not set
-                model = torch.nn.parallel.DistributedDataParallel(model)
-        elif self.gpu is not None:
-            torch.cuda.set_device(self.gpu)
-            model = model.cuda(self.gpu)
-        else:
-            # DataParallel will divide and allocate batch_size to all available GPUs
-            if self.arch.startswith('alexnet') or self.arch.startswith('vgg'):
-                model.features = torch.nn.DataParallel(model.features)
-                model.cuda()
-            else:
-                model = torch.nn.DataParallel(model).cuda()
-    
+        torch.cuda.set_device(self.gpu)
+        model = model_cpu.cuda(self.gpu)
+
         # define loss function (criterion) and optimizer
         criterion = nn.CrossEntropyLoss().cuda(self.gpu)
     
@@ -237,14 +175,25 @@ class Thread_Trainer(QThread):
                                     momentum=self.momentum,
                                     weight_decay=self.weight_decay)
         cudnn.benchmark = True
-    
-    
+
+        # default `log_dir` is "runs" - we'll be more specific here
+        writer = SummaryWriter('runs/hackathon_AI')
+        # get some random training images
+        dataiter = iter(train_loader)
+        images, labels = dataiter.next()
+
+        # create grid of images
+        img_grid = torchvision.utils.make_grid(images)
+        # get and show the unnormalized images
+        img_grid = self.show_img(img_grid)
+        # write to tensorboard
+        writer.add_image('hackathon', img_grid)
+        #writer.add_graph(model_cpu, images)  # bug : RuntimeError: Expected object of device type cuda but got device type cpu for argument #1 'self' in call to _thnn_conv2d_forward
+
         # train for the specified number of epochs
         for epoch in range(self.start_epoch, self.epochs):
             print('Begin epoch #{}'.format(epoch))
             sleep(0.001)
-            if self.distributed:
-                train_sampler.set_epoch(epoch)
     
             # decay the learning rate
             self.adjust_learning_rate(optimizer, epoch)
@@ -253,14 +202,25 @@ class Thread_Trainer(QThread):
             self.train(train_loader, model, criterion, optimizer, epoch, num_classes)
     
             # evaluate on validation set
-            acc1 = self.validate(val_loader, model, criterion, num_classes)
-    
+            acc1, loss, ret_images, ret_target = self.validate(val_loader, model, criterion, num_classes)
+
+            # save on Tensorboard
+            writer.add_scalar('validation loss',loss,epoch)
+            writer.add_scalar('validation accuracy',acc1,epoch)
+            # ...log a Matplotlib Figure showing the model's predictions on all validation images
+
+            dataiter_val = iter(val_loader_all)
+            images_val, labels_val = dataiter.next()
+
+            writer.add_figure('predictions vs. actuals',
+                            self.plot_classes_preds(model, images_val, labels_val, train_dataset.classes),
+                            global_step=epoch)
             # remember best acc@1 and save checkpoint
             is_best = acc1 > self.best_acc1
             self.best_acc1 = max(acc1, self.best_acc1)
     
             if not self.multiprocessing_distributed or (self.multiprocessing_distributed
-                    and self.rank % ngpus_per_node == 0):
+                    and self.rank % 1 == 0):
                 self.save_checkpoint({
                     'epoch': epoch + 1,
                     'arch': self.arch,
@@ -270,8 +230,9 @@ class Thread_Trainer(QThread):
                     'best_acc1': self.best_acc1,
                     'optimizer' : optimizer.state_dict(),
                 }, is_best)
-    
-    
+        writer.close()
+        self.signalEndTraining.emit()
+
     #
     # train one epoch
     #
@@ -306,7 +267,7 @@ class Thread_Trainer(QThread):
             loss = criterion(output, target)
     
             # measure accuracy and record loss
-            acc1, acc5 = self.accuracy(output, target, topk=(1, min(5, num_classes)))
+            acc1 = self.accuracy(output, target)
             losses.update(loss.item(), images.size(0))
             top1.update(acc1[0], images.size(0))
 
@@ -334,11 +295,10 @@ class Thread_Trainer(QThread):
     def validate(self, val_loader, model, criterion, num_classes):
         batch_time = AverageMeter('Time', ':6.3f')
         losses = AverageMeter('Loss', ':.4e')
-        top1 = AverageMeter('Acc@1', ':6.2f')
-        top5 = AverageMeter('Acc@5', ':6.2f')
+        top1 = AverageMeter('Accuracy', ':6.2f')
         progress = ProgressMeter(
             len(val_loader),
-            [batch_time, losses, top1, top5],
+            [batch_time, losses, top1],
             prefix='Test: ')
     
         # switch to evaluate mode
@@ -356,10 +316,10 @@ class Thread_Trainer(QThread):
                 loss = criterion(output, target)
     
                 # measure accuracy and record loss
-                acc1, acc5 = self.accuracy(output, target, topk=(1, min(5, num_classes)))
-                losses.update(loss.item(), images.size(0))
+                acc1 = self.accuracy(output, target)
+                display_loss = min(loss.item(), LOSS_THRESHOLD)
+                losses.update(display_loss, images.size(0))
                 top1.update(acc1[0], images.size(0))
-                top5.update(acc5[0], images.size(0))
     
                 # measure elapsed time
                 batch_time.update(time.time() - end)
@@ -368,10 +328,13 @@ class Thread_Trainer(QThread):
                 if i % self.print_freq == 0:
                     progress.display(i)
 
-            print(' * Acc@1 {top1.avg:.3f} Acc@5 {top5.avg:.3f}'
-                  .format(top1=top1, top5=top5))
+                if i == 0:
+                    ret_images = images
+                    ret_target = target
+
+            print(' * Accuray {top1.avg:.3f} '.format(top1=top1))
     
-        return top1.avg
+        return top1.avg, losses.avg, ret_images, ret_target
     
     
     #
@@ -414,18 +377,70 @@ class Thread_Trainer(QThread):
     #
     # compute the accuracy for a given result
     #
-    def accuracy(self, output, target, topk=(1,)):
+    def accuracy(self, output, target):
         """Computes the accuracy over the k top predictions for the specified values of k"""
         with torch.no_grad():
-            maxk = max(topk)
             batch_size = target.size(0)
-    
-            _, pred = output.topk(maxk, 1, True, True)
+            _, pred = output.topk(1, 1, True, True)
             pred = pred.t()
             correct = pred.eq(target.view(1, -1).expand_as(pred))
-    
-            res = []
-            for k in topk:
-                correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
-                res.append(correct_k.mul_(100.0 / batch_size))
-            return res
+            correct_k = correct[:1].view(-1).float().sum(0, keepdim=True)
+            return correct_k.mul_(100.0 / batch_size)
+
+    def inverse_normalize(self,tensor):
+        for t, m, s in zip(tensor, self.mean, self.std):
+            t.mul_(s).add_(m)
+        return tensor
+
+    # to get and show proper images
+    def show_img(self,img):
+        # unnormalize the images
+        img = self.inverse_normalize(tensor=img)
+        npimg = img.numpy()
+        return npimg  # return the unnormalized images
+
+    # helper function to show an image
+    # (used in the `plot_classes_preds` function below)
+    def matplotlib_imshow(self, img, one_channel=False):
+        if one_channel:
+            img = img.mean(dim=0)
+        img = img / 2 + 0.5     # unnormalize
+        img_cpu = img.cpu()
+        npimg = img_cpu.numpy()
+        if one_channel:
+            plt.imshow(npimg, cmap="Greys")
+        else:
+            plt.imshow(np.transpose(npimg, (1, 2, 0)))
+
+    def images_to_probs(self, net, images):
+        '''
+        Generates predictions and corresponding probabilities from a trained
+        network and a list of images
+        '''
+        output = net(images)
+        # convert output probabilities to predicted class
+        _, preds_tensor = torch.max(output, 1)
+        tensor_cpu = preds_tensor.cpu()
+        preds = np.squeeze(tensor_cpu.numpy())
+        return preds, [F.softmax(el, dim=0)[i].item() for i, el in zip(preds, output)]
+
+    def plot_classes_preds(self, net, images, labels, classes):
+        '''
+        Generates matplotlib Figure using a trained network, along with images
+        and labels from a batch, that shows the network's top prediction along
+        with its probability, alongside the actual label, coloring this
+        information based on whether the prediction was correct or not.
+        Uses the "images_to_probs" function.
+        '''
+        preds, probs = self.images_to_probs(net, images)
+        # plot the images in the batch, along with predicted and true labels
+        fig = plt.figure(figsize=(12, 48))
+        for idx in np.arange(4):
+            ax = fig.add_subplot(1, 4, idx + 1, xticks=[], yticks=[])
+            self.matplotlib_imshow(images[idx], one_channel=True)
+            ax.set_title("{0}, {1:.1f}%\n(label: {2})".format(
+                classes[preds[idx]],
+                probs[idx] * 100.0,
+                classes[labels[idx]]),
+                color=("green" if preds[idx] == labels[idx].item() else "red"))
+        return fig

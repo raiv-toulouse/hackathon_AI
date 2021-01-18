@@ -21,7 +21,7 @@ class record_images(QWidget):
     def record(self):
         if self.mode_create:
             # create the 4 directories for this category
-            for dir in ["images","data/train","data/val","data/test"]:
+            for dir in ["images","data/train","data/val"]:
                 (self.ws/dir/self.le_category_name.text()).mkdir()
             self.le_category_name.setEnabled(False)
             self.btn_record.setText("Start")

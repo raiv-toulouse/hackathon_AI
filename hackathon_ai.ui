@@ -204,12 +204,6 @@
          </property>
         </widget>
        </item>
-       <item>
-        <widget class="MplWidget" name="gv_accuracy"/>
-       </item>
-       <item>
-        <widget class="MplWidget" name="gv_loss"/>
-       </item>
       </layout>
      </item>
      <item>
@@ -234,13 +228,6 @@
    </item>
   </layout>
  </widget>
- <customwidgets>
-  <customwidget>
-   <class>MplWidget</class>
-   <extends>QGraphicsView</extends>
-   <header>mplwidget.h</header>
-  </customwidget>
- </customwidgets>
  <resources/>
  <connections/>
 </ui>
